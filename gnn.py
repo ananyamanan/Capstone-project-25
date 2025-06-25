@@ -112,7 +112,7 @@ class GNNTrainer:
             hidden_dim=config.HIDDEN_DIM,
             num_classes=config.NUM_CLASSES
         ).to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.LEARNING_RATE)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.LEARNING_RATE) # optimizer
         self.criterion = torch.nn.NLLLoss()
 
     def train(self, train_loader):

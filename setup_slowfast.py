@@ -44,16 +44,13 @@ def check_python_packages():
     """Check and install required Python packages"""
     print("\n🐍 Checking Python packages...")
     
-    # Packages that should already be installed from requirements.txt
     existing_packages = [
         'torch', 'torchvision', 'opencv-python', 'numpy', 
         'pillow', 'ultralytics', 'deep-sort-realtime'
     ]
     
-    # Additional packages we might need
     additional_packages = []
     
-    # Check existing packages
     for package in existing_packages:
         try:
             __import__(package.replace('-', '_'))
@@ -62,7 +59,6 @@ def check_python_packages():
             print(f"❌ {package} - should be in your requirements.txt")
             additional_packages.append(package)
     
-    # Install any missing packages
     if additional_packages:
         print(f"\n📦 Installing missing packages: {', '.join(additional_packages)}")
         for package in additional_packages:
@@ -86,7 +82,6 @@ def verify_torch_installation():
         print(f"✅ PyTorch version: {torch.__version__}")
         print(f"✅ TorchVision version: {torchvision.__version__}")
         
-        # Check GPU availability
         if torch.cuda.is_available():
             print(f"🚀 CUDA available - GPU: {torch.cuda.get_device_name(0)}")
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
@@ -94,10 +89,8 @@ def verify_torch_installation():
         else:
             print("💻 Using CPU (no GPU acceleration)")
         
-        # Test custom SlowFast model creation
         print("🧪 Testing SlowFast model creation...")
         
-        # Create a simple test model
         import torch.nn as nn
         
         class TestSlowFast(nn.Module):
@@ -108,16 +101,15 @@ def verify_torch_installation():
                 
             def forward(self, x):
                 if isinstance(x, list):
-                    x = x[0]  # Use first input
+                    x = x[0]
                 b, c, t, h, w = x.shape
                 x = self.conv3d(x)
-                x = torch.mean(x, dim=[2, 3, 4])  # Global average pooling
+                x = torch.mean(x, dim=[2, 3, 4])
                 return self.classifier(x)
         
         model = TestSlowFast()
         print("✅ Custom SlowFast model structure created successfully")
         
-        # Test with dummy input
         device = torch.device('cuda' if torch.cuda.is_available() else 
                             'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'cpu')
         
@@ -139,7 +131,7 @@ def setup_project_structure():
     print("\n📁 Setting up project structure...")
     
     folders = {
-        'tracked_videos': 'Input folder for tracked videos (.avi files)',
+        'tracked_videos': 'Input folder for tracked videos (.avi files) with subfolders anomaly/normal/event_type',
         'slowfast_activity_videos': 'Output folder for activity recognition results',
         'logs': 'Folder for log files'
     }
@@ -152,13 +144,21 @@ def setup_project_structure():
         else:
             print(f"✅ Found {folder}")
     
-    # Check for input videos
-    tracked_videos = list(Path('tracked_videos').glob('*.avi'))
-    print(f"📹 Found {len(tracked_videos)} .avi files in tracked_videos/")
+    # Check for input videos in nested structure
+    tracked_videos_count = 0
+    for category in ['anomaly', 'normal']:
+        category_path = Path('tracked_videos') / category
+        if category_path.exists():
+            for event_type in category_path.iterdir():
+                if event_type.is_dir():
+                    tracked_videos = list(event_type.glob('*.avi'))
+                    tracked_videos_count += len(tracked_videos)
     
-    if len(tracked_videos) == 0:
-        print("⚠️  No .avi files found in tracked_videos folder")
-        print("   Please add your tracked videos before running the pipeline")
+    print(f"📹 Found {tracked_videos_count} .avi files in tracked_videos/{category}/<event_type>/")
+    
+    if tracked_videos_count == 0:
+        print("⚠️  No .avi files found in tracked_videos/<category>/<event_type>/ folders")
+        print("   Please add your tracked videos from deepsort_yolo.py output before running the pipeline")
 
 def create_config_file():
     """Create a configuration file for easy customization"""
@@ -183,10 +183,10 @@ DRAW_ACTIVITY_HISTORY = true # Show activity history dots
 OVERLAY_TRANSPARENCY = 0.7   # Overlay transparency (0.0 to 1.0)
 
 [ACTIVITIES]
-# Add or remove activities as needed
+# Add or remove activities as needed based on SPHAR Dataset
 CUSTOM_ACTIVITIES = [
-    "walking", "running", "sitting", "standing", "waving",
-    "clapping", "dancing", "eating", "drinking", "talking"
+    "sitting", "stealing", "vandalizing", "running",
+    "carcrash", "kicking", "neutral"
 ]
 '''
     
@@ -202,18 +202,15 @@ def run_quick_test():
     print("\n🧪 Running quick functionality test...")
     
     try:
-        # Test imports
         import torch
         import torchvision
         import cv2
         import numpy as np
         
-        # Test model loading
         device = torch.device('cuda' if torch.cuda.is_available() else 
                             'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'cpu')
         print(f"✅ Using device: {device}")
         
-        # Create a dummy video frame
         dummy_frame = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         
         print("✅ All components working correctly!")
@@ -230,39 +227,31 @@ def main():
     print("This script will set up SlowFast integration for your existing")
     print("YOLOv8 + DeepSORT tracked videos pipeline.\n")
     
-    # Step 1: Check system requirements
     if not check_system_requirements():
         print("\n❌ Setup failed: Missing system requirements")
         return False
     
-    # Step 2: Check Python packages
     if not check_python_packages():
         print("\n❌ Setup failed: Python package issues")
         return False
     
-    # Step 3: Verify PyTorch
     if not verify_torch_installation():
         print("\n❌ Setup failed: PyTorch verification failed")
         return False
     
-    # Step 4: Setup project structure
     setup_project_structure()
-    
-    # Step 5: Create config file
     create_config_file()
     
-    # Step 6: Run quick test
     if not run_quick_test():
         print("\n❌ Setup failed: Functionality test failed")
         return False
     
-    # Success message
     print("\n" + "=" * 50)
     print("🎉 Setup completed successfully!")
     print("\n📋 Next steps:")
-    print("1. Add your tracked .avi videos to the 'tracked_videos/' folder")
+    print("1. Add your tracked .avi videos to the 'tracked_videos/<category>/<event_type>/' folders")
     print("2. Run the activity recognition:")
-    print("   python slowfast_activity_recognition.py")
+    print("   python slowfast_activity.py")
     print("3. Check results in 'slowfast_activity_videos/' folder")
     print("\n⚙️  Configuration:")
     print("- Edit 'slowfast_config.ini' to customize settings")
@@ -278,4 +267,3 @@ if __name__ == "__main__":
     success = main()
     if not success:
         sys.exit(1)
-        

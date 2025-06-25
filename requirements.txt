@@ -42,3 +42,7 @@ urllib3==2.4.0
 torch 
 torch-geometric
 scikit-learn
+kagglehub
+opencv-python
+
+pillow
