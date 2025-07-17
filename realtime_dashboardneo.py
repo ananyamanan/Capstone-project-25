@@ -1,15 +1,23 @@
+# Streamlit Deloitte Dashboard (Real-Time Surveillance)
 import streamlit as st
+st.set_page_config(page_title="Real-Time Surveillance", page_icon="📹", layout="wide")
+
 import pandas as pd
 import os
 from dotenv import load_dotenv
 from groq import Groq
+from datetime import datetime
+from pathlib import Path
+from neo4j import GraphDatabase
 
 # === Load API Key from .env ===
 load_dotenv()
-
-os.environ["GROQ_API_KEY"] = "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"
-
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# === Load Neo4j credentials ===
+NEO4J_URI = os.getenv("url", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("username", "neo4j")
+NEO4J_PASS = os.getenv("password", "12345678")
 
 # === Theme Switch ===
 theme_mode = st.sidebar.radio("Theme", ["Dark", "Light"], index=0)
@@ -34,9 +42,6 @@ DARK_THEME = {
 
 THEME = DARK_THEME if theme_mode == "Dark" else LIGHT_THEME
 
-# === Page Setup ===
-st.set_page_config(page_title="Real-Time Surveillance", page_icon="📹", layout="wide")
-
 # === Custom CSS ===
 st.markdown(f"""
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -54,9 +59,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# === Load Data ===
-df = pd.read_csv("activity_predictions.csv")
-
+# === Label Mapping ===
 label_map = {
     5: "stealing", 8: "sitting", 10: "running", 60: "vandalizing",
     62: "carcrash", 87: "stealing", 92: "carcrash", 103: "carcrash",
@@ -65,6 +68,22 @@ label_map = {
     358: "vandalizing", 391: "vandalizing"
 }
 anomaly_labels = ["stealing", "carcrash", "vandalizing", "kicking"]
+
+# === Load Data from Neo4j ===
+@st.cache_data(show_spinner=True)
+def load_from_neo4j():
+    driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
+    query = """
+    MATCH (a:Activity)
+    RETURN a.video AS video, a.predicted_class_id AS predicted_class_id
+    """
+    with driver.session() as session:
+        result = session.run(query)
+        data = result.data()
+        df = pd.DataFrame(data)
+    return df
+
+df = load_from_neo4j()
 
 # === Groq Summary Generator ===
 @st.cache_data(show_spinner=False)
@@ -89,7 +108,6 @@ Information provided:
 🔹 Use ONLY the given information. Do NOT make up extra context.
 🔹 End your answer with: '✅ Recommendation: <action to take>'
 """
-
     try:
         response = client.chat.completions.create(
             model="llama3-70b-8192",
@@ -105,7 +123,8 @@ st.markdown("<p style='text-align:center;'>Live Activity Detection & AI Summarie
 
 # === Display Cards ===
 for idx, row in df.iterrows():
-    video_path = row["video"].replace(".avi", ".mp4")
+    raw_path = row["video"].replace("\\", "/").replace(".avi", ".mp4")
+    video_path = Path(raw_path)
     class_id = row["predicted_class_id"]
 
     if pd.isna(class_id):
@@ -115,8 +134,8 @@ for idx, row in df.iterrows():
     label = label_map.get(class_id, "unknown")
     is_alert = label in anomaly_labels
 
-    # Extract metadata
-    filename = os.path.basename(video_path)
+    # Metadata from filename
+    filename = os.path.basename(str(video_path))
     parts = filename.split(".")
     date = parts[1] if len(parts) > 2 else "N/A"
     time = parts[2] if len(parts) > 3 else "N/A"
@@ -126,7 +145,11 @@ for idx, row in df.iterrows():
     col1, col2 = st.columns([2, 3])
 
     with col1:
-        st.video(video_path)
+        if video_path.exists():
+            st.video(str(video_path.as_posix()))
+        else:
+            st.warning(f"⚠️ Video not found: {video_path}")
+
         st.markdown(f"**Detected Activity:** {label}")
         badge = "alert-yes" if is_alert else "alert-no"
         status = "🚨 Anomaly Detected" if is_alert else "✅ Normal Activity"

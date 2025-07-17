@@ -1,14 +1,42 @@
 # Streamlit Deloitte Dashboard (IoT-Inspired with Theme Switch)
 import streamlit as st
+st.set_page_config(page_title="Smart Surveillance Dashboard", page_icon="📹", layout="wide")
+
 import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
+from pathlib import Path
+from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# --- Neo4j Setup ---
+NEO4J_URI = os.getenv("url", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("username", "neo4j")
+NEO4J_PASS = os.getenv("password", "12345678")
+
+driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
+
+# --- Load Data from Neo4j ---
+@st.cache_data
+def load_data():
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (a:Activity)-[:TRIGGERED]->(al:Alert)-[:SUMMARIZED_BY]->(s:Summary)
+            RETURN a.video AS video, al.activity_label AS activity_label,
+                   al.is_alert AS is_alert, s.summary AS summary
+        """)
+        records = result.data()
+        return pd.DataFrame(records)
+
+df = load_data()
 
 # --- Theme Switch ---
 theme_mode = st.sidebar.radio("Theme", ["Dark", "Light"], index=0)
 
-# --- Theme Colors ---
 LIGHT_THEME = {
     'background': '#f5f5f5',
     'panel': '#ffffff',
@@ -29,10 +57,7 @@ DARK_THEME = {
 
 THEME = DARK_THEME if theme_mode == "Dark" else LIGHT_THEME
 
-# Page setup
-st.set_page_config(page_title="Smart Surveillance Dashboard", page_icon="📹", layout="wide")
-
-# Custom CSS
+# --- Custom CSS ---
 st.markdown(f"""
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -54,27 +79,19 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# Load data
-@st.cache_data
-def load_data():
-    return pd.read_csv("alert_summary.csv")
-
-df = load_data()
-
-# Header
+# --- Header ---
 st.markdown(f"""
 <div class="main-title"><i class="fas fa-video"></i> Smart Surveillance Dashboard</div>
 <p class="subtitle">AI-Powered Video Analytics & Threat Detection</p>
 <p class="credit">By Team Data Mavericks</p>
 """, unsafe_allow_html=True)
 
-# Sidebar Filters
+# --- Sidebar Filters ---
 with st.sidebar:
     st.markdown(f"<div class='section-title'><i class='fas fa-filter'></i> Filters</div>", unsafe_allow_html=True)
     selected_activity = st.selectbox("Select Activity", ['All'] + list(df['activity_label'].unique()), key="activity")
     alert_filter = st.selectbox("Alert Status", ['All', 'Alert Only', 'No Alert'], key="alert")
 
-    # Show stats based on filters
     filtered_df = df.copy()
     if selected_activity != 'All':
         filtered_df = filtered_df[filtered_df['activity_label'] == selected_activity]
@@ -94,7 +111,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# System Metrics
+# --- System Metrics ---
 st.markdown("<div class='section-title'><i class='fas fa-gauge'></i> System Metrics</div>", unsafe_allow_html=True)
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -108,7 +125,7 @@ with col4:
     unique_activities = df['activity_label'].nunique()
     st.markdown(f"<div class='metric-card'><div class='metric-value'>{unique_activities}</div><div class='metric-label'>Activity Types</div></div>", unsafe_allow_html=True)
 
-# Charts
+# --- Charts ---
 col1, col2 = st.columns(2)
 with col1:
     st.markdown("<div class='section-title'><i class='fas fa-chart-pie'></i> Activity Distribution</div>", unsafe_allow_html=True)
@@ -143,16 +160,20 @@ with col2:
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-# Videos
+# --- Video Analysis Section ---
 st.markdown(f"<div class='section-title'><i class='fas fa-clapperboard'></i> Video Analysis</div>", unsafe_allow_html=True)
 for _, row in filtered_df.iterrows():
     st.markdown('<div class="video-card">', unsafe_allow_html=True)
     col1, col2 = st.columns([2, 3])
     with col1:
         try:
-            st.video(row['video'].replace(".avi", ".mp4"))
-        except:
-            st.error("Video not found.")
+            video_path = Path(row['video'].replace("\\", "/")).with_suffix(".mp4")
+            if video_path.exists():
+                st.video(str(video_path.resolve().as_posix()))
+            else:
+                st.error(f"⚠️ Video not found: {video_path}")
+        except Exception as e:
+            st.error(f"⚠️ Error loading video: {e}")
     with col2:
         st.markdown(f"**File:** {os.path.basename(row['video'])}")
         st.markdown(f"**Activity:** {row['activity_label']}")
@@ -162,7 +183,7 @@ for _, row in filtered_df.iterrows():
         st.markdown(f"<div class='modern-text'><strong>AI Summary:</strong> {row['summary']}</div>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Footer
+# --- Footer ---
 st.markdown(f"""
 <div style="text-align: center; padding: 1rem; color: {THEME['text_secondary']}; font-size: 0.85rem;">
     Deloitte Smart Surveillance Dashboard © {datetime.now().year} | Team Data Mavericks
