@@ -69,3 +69,4 @@ reportlab
 deep_translator
 torch==2.2.2
 python-dotenv
+groq
