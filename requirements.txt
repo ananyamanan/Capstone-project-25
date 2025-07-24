@@ -67,4 +67,4 @@ neo4j>=5.15.0
 pandas
 reportlab 
 deep_translator
-torch==2.7.1
+torch==2.2.2
